@@ -108,13 +108,15 @@ class MultiMaskChange(Dataset):
         a_img = self.load_image(a_img_path)
         b_img = self.load_image(b_img_path)
 
-        # Step 2: 多类别掩码读取
-        labels = {}
+        # Step 2: 多类别掩码读取并合并为 [N, H, W] 的 NumPy 数组
+        label_list = []
         for cls, mask_path in label_class_paths.items():
-            mask = self.load_binary_mask(mask_path)
-            labels[cls] = mask  # 暂存 NumPy array，后续与 transform 一起处理
+            mask = self.load_binary_mask(mask_path)  # [H, W], np.uint8
+            label_list.append(mask)
 
-        # Step 3: 数据增强（转换为 NumPy 数组传入）
+        labels = np.stack(label_list, axis=-1)  # [H, W, N]
+
+        # Step 3: 数据增强（传入 NumPy array）
         if self.transform:
             a_img, b_img, labels = self.transform(a_img, b_img, labels)
 
@@ -148,12 +150,10 @@ if __name__ == '__main__':
     # print('测试集样本数：', len(test_dataset))
 
     img_a, img_b, label = train_dataset[0]
-    print('训练集第1个样本a图像形状：', img_a.shape, 'b图像形状：', img_b.shape, '标注形状：',
-          {cls: label[cls].shape for cls in cfg.data.classes})
+    print('训练集第1个样本a图像形状：', img_a.shape, 'b图像形状：', img_b.shape, '标注形状：', label.shape)
 
     img_a, img_b, label = val_dataset[0]
-    print('验证集第1个样本a图像形状：', img_a.shape, 'b图像形状：', img_b.shape, '标注形状：',
-          {cls: label[cls].shape for cls in cfg.data.classes})
+    print('验证集第1个样本a图像形状：', img_a.shape, 'b图像形状：', img_b.shape, '标注形状：', label.shape)
 
     # img_a, img_b, label = test_dataset[0]
     # print('测试集第1个样本a图像形状：', img_a.shape, 'b图像形状：', img_b.shape, '标注形状：',

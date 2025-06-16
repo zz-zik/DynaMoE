@@ -1,0 +1,74 @@
+name: 'train'
+device: 'cuda:1'
+seed: 42
+output_dir: ./work_dirs
+num_workers: 12
+resume: null # './work_dirs/train_0/checkpoints/best_f1.pth'  # null如果存在，则恢复训练
+prompt: 'Buildings with changes, Mound changes.'
+onnx_weights: './examples/ONNXRuntime/weights'
+
+data:
+  data_root: './dataset/change'
+  img_size: [512, 512]                            # 输入图片大小
+  classes: ['building', 'vegetation']             # 多掩码二值类别
+  data_format: 'custom'                           # ['default', 'custom']
+  transforms:
+    prob: 1.0                                     # 应用概率
+    random_flip: 0.5                              # 翻转
+    random_rotation: 15                           # 旋转角度
+    random_resize: [0.0, 0.0]                     # 缩放比例
+    color_jitter: [0.2, 0.2, 0.2, 0.2]            # 颜色扰动强度 [brightness, contrast, saturation, hue]
+    gamma_correction: [0.8, 1.2]                  # Gamma 校正概率, gamma范围
+    blur_sigma: [5.0, 0.1, 2.0]                   # 高斯模糊,[sigma, min, max]
+    clahe: 0.5                                    # 直方图均衡化
+
+model:
+  backbone: 'sigma_small'                         # ['sigma_small', 'sigma_large', 'sigma_base']
+  use_moe: True                                   # 是否使用 MoE
+  new_classes: null                               # 新类别列表
+  expert_hidden_dim: 128                          # MoE 专家隐藏层维度
+  gate_hidden_dim: 256                            # 门控隐藏层维度
+
+loss:
+  weight_ce: 1.0                                  # 分类任务基础损失
+  weight_load: 0.01                               # 负载均衡损失权重
+  weight_div: 0.001                               # 专家多样性损失权重
+  weight_spa: 0.001                               # 稀疏性损失权重
+  weight_gate: 0.05                               # 门控熵损失权重
+
+logger:
+  log_name: 'Seg_log'
+  level: 'INFO'
+
+training:
+  start_epoch: 1
+  epochs: 200
+  scheduler: 'step'  # [step, plateau]
+  lr: 0.0001
+  lr_backbone: 0.00001
+  lr_drop: 20
+  weight_decay: 0.0001
+  batch_size: 2
+  eval_freq: 1
+  start_eval: 1
+  threshold: 0.
+
+test:
+  img_dirs: './data/change'
+  batch_size: 1
+  threshold: 0.5
+  device: 'cuda:1'
+  save_dir: "./work_dirs"
+  name: "test"
+  weights_dir: './work_dirs/train_0/checkpoints/best_iou.pth'
+  show: True
+  show_overlay: False
+
+infer:
+  name: 'ZK_5'
+  input_dir: './data/ZK_5'
+  chunk_size: 25600  # 25600
+  weights_dir: './work_dirs/train_0/checkpoints/best_iou.pth'
+  output_dir: './outputs'
+  threshold: 0.5
+  device: 'cuda:1'

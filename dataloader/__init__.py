@@ -38,7 +38,6 @@ if __name__ == '__main__':
     data_train, data_val = build_dataset(cfg)
 
     for i, (a_img, b_img, target) in enumerate(data_train):
-        print('训练集第', i, '个样本a图像形状：', a_img.shape, 'b图像形状：', b_img.shape, '标注形状：',
-              {cls: target[cls].shape for cls in cfg.data.classes})
+        print('训练集第', i, '个样本a图像形状：', a_img.shape, 'b图像形状：', b_img.shape, '标注形状：', target.shape)
         if i == 2:
             break

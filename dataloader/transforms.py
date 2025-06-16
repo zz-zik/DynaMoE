@@ -75,17 +75,25 @@ class Transforms(nn.Module):
                 elif name == 'Clahe':
                     self.transforms.append(CLAHE(prob=prob))
 
-    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: dict) -> Tuple[np.ndarray, np.ndarray, dict]:
+    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            a_img: [H, W, 3]
+            b_img: [H, W, 3]
+            target: [N, H, W]
+        Returns:
+            a_img: Tensor [3, H, W]
+            b_img: Tensor [3, H, W]
+            target: Tensor [N, H, W]
+        """
         if self.train:
             for transform in self.transforms:
                 a_img, b_img, target = transform(a_img, b_img, target)
 
-        # 应用归一化
-        a_img = self.a_transform(a_img)
-        b_img = self.b_transform(b_img)
-
-        # 转换为 Tensor
-        target = {k: torch.from_numpy(v).long().unsqueeze(0) for k, v in target.items()}  # (1, H, W)
+        # 转换为 Tensor 并归一化
+        a_img = self.a_transform(a_img)  # [3, H, W]
+        b_img = self.b_transform(b_img)  # [3, H, W]
+        target = torch.from_numpy(target).permute(2, 0, 1).long()  # [H, W, N] -> [N, H, W]
 
         return a_img, b_img, target
 
@@ -97,18 +105,17 @@ class RandomFlip(nn.Module):
         super().__init__()
         self.prob = prob
 
-    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: dict) -> Tuple[np.ndarray, np.ndarray, dict]:
+
+    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if random.random() < self.prob:
             if random.random() < 0.5:
-                # 水平翻转
                 a_img = cv2.flip(a_img, 1)
                 b_img = cv2.flip(b_img, 1)
-                target = {k: cv2.flip(v, 1) for k, v in target.items()}
+                arget = cv2.flip(target, 1)
             else:
-                # 垂直翻转
                 a_img = cv2.flip(a_img, 0)
                 b_img = cv2.flip(b_img, 0)
-                target = {k: cv2.flip(v, 0) for k, v in target.items()}
+                target = np.flip(target, 0)
         return a_img, b_img, target
 
 
@@ -120,49 +127,33 @@ class RandomResize(nn.Module):
         self.scale_range = scale_range
         self.prob = prob
 
-    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: dict) -> Tuple[np.ndarray, np.ndarray, dict]:
+    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if random.random() < self.prob:
-            scale = np.random.uniform(self.scale_range[0], self.scale_range[1])
-            img_h, img_w = a_img.shape[:2]
-            new_size = (int(img_w * scale), int(img_h * scale))
+            scale = np.random.uniform(*self.scale_range)
+            h, w = a_img.shape[:2]
+            new_w, new_h = int(w * scale), int(h * scale)
 
-            a_img = cv2.resize(a_img, new_size)
-            b_img = cv2.resize(b_img, new_size)
-            target = {k: cv2.resize(v, new_size, interpolation=cv2.INTER_NEAREST) for k, v in target.items()}
+            a_img = cv2.resize(a_img, (new_w, new_h))
+            b_img = cv2.resize(b_img, (new_w, new_h))
+            target = cv2.resize(target, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
 
-            # Crop or Pad
+            # Crop or Pad 回原始尺寸
             if scale > 1.0:
-                top = (a_img.shape[0] - img_h) // 2
-                left = (a_img.shape[1] - img_w) // 2
-                a_img = a_img[top:top + img_h, left:left + img_w]
-                b_img = b_img[top:top + img_h, left:left + img_w]
-                target = target[top:top + img_h, left:left + img_w]
+                top = (new_h - h) // 2
+                left = (new_w - w) // 2
+                a_img = a_img[top:top + h, left:left + w]
+                b_img = b_img[top:top + h, left:left + w]
+                target = target[top:top + h, left:left + w]
             else:
-                pad_top = int((img_h - a_img.shape[0]) // 2)
-                pad_left = int((img_w - a_img.shape[1]) // 2)
-                pad_bottom = int(img_h - a_img.shape[0] - pad_top)
-                pad_right = int(img_w - a_img.shape[1] - pad_left)
+                pad_top = (h - new_h) // 2
+                pad_left = (w - new_w) // 2
+                pad_bottom = h - new_h - pad_top
+                pad_right = w - new_w - pad_left
 
-                # 根据图像通道数设置 value 值
-                if a_img.ndim == 3 and a_img.shape[2] == 3:  # RGB 图像
-                    pad_value = [0, 0, 0]
-                else:  # 灰度图或标签图
-                    pad_value = 0
+                a_img = cv2.copyMakeBorder(a_img, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_CONSTANT, value=0)
+                b_img = cv2.copyMakeBorder(b_img, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_CONSTANT, value=0)
+                target = cv2.copyMakeBorder(target, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_CONSTANT, value=0)
 
-                a_img = cv2.copyMakeBorder(a_img, pad_top, pad_bottom, pad_left, pad_right,
-                                           borderType=cv2.BORDER_CONSTANT, value=pad_value)
-                b_img = cv2.copyMakeBorder(b_img, pad_top, pad_bottom, pad_left, pad_right,
-                                           borderType=cv2.BORDER_CONSTANT, value=pad_value)
-                target = cv2.copyMakeBorder(target, pad_top, pad_bottom, pad_left, pad_right,
-                                            borderType=cv2.BORDER_CONSTANT, value=(0,))
-
-            # 确保最终尺寸一致
-            if a_img.shape[1:] != (img_h, img_w):
-                a_img = cv2.resize(a_img, (img_h, img_w))
-                b_img = cv2.resize(b_img, (img_h, img_w))
-                target = cv2.resize(target, (img_h, img_w), interpolation=cv2.INTER_NEAREST)
-
-        assert a_img.shape == b_img.shape, "图像尺寸不一致"
         return a_img, b_img, target
 
 
@@ -174,15 +165,15 @@ class RandomRotation(nn.Module):
         self.angle = angle
         self.prob = prob
 
-    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: dict) -> Tuple[np.ndarray, np.ndarray, dict]:
-        if torch.rand(1) < self.prob:
-            center_x, center_y = a_img.shape[1] // 2, a_img.shape[0] // 2
-            m = cv2.getRotationMatrix2D((center_x, center_y), self.angle, scale=1)
-            # 旋转
-            a_img = cv2.warpAffine(a_img, m, (a_img.shape[1], a_img.shape[0]))
-            b_img = cv2.warpAffine(b_img, m, (b_img.shape[1], b_img.shape[0]))
-            target = {k: cv2.warpAffine(v, m, (v.shape[1], v.shape[0]), flags=cv2.INTER_NEAREST) for k, v in
-                      target.items()}
+    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if random.random() < self.prob:
+            h, w = a_img.shape[:2]
+            center = (w // 2, h // 2)
+            m = cv2.getRotationMatrix2D(center, self.angle, 1)
+
+            a_img = cv2.warpAffine(a_img, m, (w, h))
+            b_img = cv2.warpAffine(b_img, m, (w, h))
+            target = cv2.warpAffine(target, m, (w, h), flags=cv2.INTER_NEAREST)  # [H, W, N]
 
         return a_img, b_img, target
 
@@ -228,7 +219,7 @@ class ColorJitter(nn.Module):
         self.hue = color_jitter[3]
         self.prob = prob
 
-    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: dict) -> Tuple[np.ndarray, np.ndarray, dict]:
+    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if random.random() < self.prob:
             # 随机生成参数
             b = 1.0 + random.uniform(-self.brightness, self.brightness)
@@ -259,7 +250,7 @@ class GammaCorrection(nn.Module):
         self.gamma_range = gamma_range
         self.prob = prob
 
-    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: dict) -> Tuple[np.ndarray, np.ndarray, dict]:
+    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if torch.rand(1) < self.prob:
             gamma = float(torch.empty(1).uniform_(self.gamma_range[0], self.gamma_range[1]))
 
@@ -283,7 +274,7 @@ class GaussianBlur(nn.Module):
         self.sigma = sigma
         self.prob = prob
 
-    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: dict) -> Tuple[np.ndarray, np.ndarray, dict]:
+    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if torch.rand(1) < self.prob:
             sigma = random.uniform(*self.sigma)
             a_img = cv2.GaussianBlur(a_img, (self.kernel_size, self.kernel_size), sigma)
@@ -315,7 +306,7 @@ class CLAHE(nn.Module):
             img_eq = self.clahe.apply(img)
         return img_eq
 
-    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: dict) -> Tuple[np.ndarray, np.ndarray, dict]:
+    def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if random.random() < self.prob:
             a_img = self.apply_clahe_to_image(a_img)
             b_img = self.apply_clahe_to_image(b_img)
