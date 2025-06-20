@@ -15,7 +15,7 @@ import random
 import time
 import warnings
 
-from sklearn.metrics import precision_score, recall_score, f1_score, jaccard_score
+from sklearn.metrics import precision_score, recall_score, f1_score, jaccard_score, accuracy_score
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from dataloader import build_dataset
@@ -144,14 +144,12 @@ class Trainer:
         self.start_epoch = self.cfg.training.start_epoch
         self.step = 0
 
-        # 保存训练期间的指标（每个类）
+        # 保存训练期间的指标
         self.precision_list = []
         self.recall_list = []
-        self.f1_dict_list = []
-        self.iou_dict_list = []
         self.f1_avg_list = []
         self.iou_avg_list = []
-        self.accuracy_list = []
+        self.oa_avg_list = []
 
     def _setup_logging_tools(self):
         """设置日志记录工具"""
@@ -177,7 +175,7 @@ class Trainer:
             self.logger.info('------------------------ Continue training ------------------------')
             logging.warning(f"loading from {self.cfg.resume}")
             checkpoint = torch.load(self.cfg.resume, map_location='cpu')
-            self.model_without_ddp.load_state_dict(checkpoint['model'])
+            self.model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
 
             if 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
@@ -258,35 +256,24 @@ class Trainer:
         t2 = time.time()
 
         # 更新指标列表
-        for cls in self.classes:
-            if cls not in self.f1_dict_list:
-                self.f1_dict_list.append({})
-            if cls not in self.iou_dict_list:
-                self.iou_dict_list.append({})
-            if cls not in self.precision_list:
-                self.precision_list.append({})
-            if cls not in self.recall_list:
-                self.recall_list.append({})
-            if cls not in self.accuracy_list:
-                self.accuracy_list.append({})
-
-            self.precision_list[-1][cls] = metrics['precision'][cls]
-            self.recall_list[-1][cls] = metrics['recall'][cls]
-            self.f1_dict_list[-1][cls] = metrics['f1'][cls]
-            self.iou_dict_list[-1][cls] = metrics['iou'][cls]
-            self.accuracy_list[-1][cls] = metrics['oa'][cls]
+        avg_metrics = get_avg_metrics(metrics)
+        self.precision_list.append(avg_metrics['precision'])
+        self.recall_list.append(avg_metrics['recall'])
+        self.f1_avg_list.append(avg_metrics['f1'])
+        self.iou_avg_list.append(avg_metrics['iou'])
+        self.oa_avg_list.append(avg_metrics['oa'])
 
         fps = len(self.dataloader_val.dataset) / (t2 - t1)
 
         # 构造日志字符串
         metric_str = ", ".join(
-            [f"{cls}: F1={metrics['f1'][cls]:.4f}, IoU={metrics['iou'][cls]:.4f}" for cls in self.classes])
+            [f"{cls}: F1={metrics['f1'][cls]:.4f}, IoU={metrics['iou'][cls]:.4f}, OA={metrics['oa'][cls]:.4f}" for cls in self.classes])
         self.logger.info(
             "[ep %d][%.3fs][%.5ffps] loss: %.4f | %s ---- @best f1: %s" %
             (
                 epoch, t2 - t1, fps, metrics['loss'],
                 metric_str,
-                ", ".join([f"{cls}: {np.max([m[cls] for m in self.f1_dict_list if cls in m])}" for cls in self.classes])
+                ", ".join([f"avg_f1: {np.max(self.f1_avg_list):.4f}, avg_IoU: {np.max(self.iou_avg_list):.4f}, avg_OA: {np.max(self.oa_avg_list):.4f}"])
             )
         )
 
@@ -301,45 +288,26 @@ class Trainer:
                 self.writer.add_scalar(f'metric/{cls}_oa', metrics['oa'][cls], self.step)
             self.step += 1
 
-        return metrics
+        # 更新验证指标
+        self.results_df.loc[epoch, [
+            'val_loss', 'val_precision', 'val_recall', 'val_f1', 'val_iou', 'val_oa'
+        ]] = [avg_metrics['loss'], avg_metrics['precision'], avg_metrics['recall'],
+              avg_metrics['f1'], avg_metrics['iou'], avg_metrics['oa']]
+        return avg_metrics
 
     def _save_best_models(self, epoch, stat, metrics):
         """保存最佳模型"""
-        # 提取所有类别的 F1 和 IoU 值
-        f1_values = np.array(list(metrics['f1'].values()))
-        iou_values = np.array(list(metrics['iou'].values()))
-
-        # 计算类别平均 F1 和 IoU
-        avg_f1 = np.mean(f1_values)
-        avg_iou = np.mean(iou_values)
-
-        # 更新 F1 列表和 IoU 列表
-        self.f1_avg_list.append(avg_f1)
-        self.iou_avg_list.append(avg_iou)
-
-        # 保存最好的 F1 模型
-        if avg_f1 == np.max(self.f1_avg_list):
+        # 保存最好的F1模型
+        if metrics['f1'] == np.max(self.f1_avg_list):
             self._save_checkpoint(epoch, stat, 'best_f1')
 
-        # 保存最好的 IoU 模型
-        if avg_iou == np.max(self.iou_avg_list):
+        # 保存最好的IoU模型
+        if metrics['iou'] == np.max(self.iou_avg_list):
             self._save_checkpoint(epoch, stat, 'best_iou')
 
     def _save_results_csv(self):
         """保存结果到CSV文件"""
-        result_list = []
-        for idx in range(len(self.results_df)):
-            row = self.results_df.iloc[idx].to_dict()
-            for cls in self.classes:
-                row[f'{cls}_precision'] = self.precision_list[idx].get(cls, '')
-                row[f'{cls}_recall'] = self.recall_list[idx].get(cls, '')
-                row[f'{cls}_f1'] = self.f1_dict_list[idx].get(cls, '')
-                row[f'{cls}_iou'] = self.iou_dict_list[idx].get(cls, '')
-                row[f'{cls}_oa'] = self.accuracy_list[idx].get(cls, '')
-            result_list.append(row)
-
-        results_df = pd.DataFrame(result_list)
-        results_df.to_csv(self.csv_file_path, index=False)
+        self.results_df.to_csv(self.csv_file_path, index=False)
 
     def _log_final_summary(self, total_time):
         """记录最终总结"""
@@ -352,7 +320,7 @@ class Trainer:
 
         # 打印最好的指标
         self.logger.info("Best F1: %.4f, Best IoU: %.4f, Best Accuracy: %.4f" % (
-            np.max(self.f1_dict_list), np.max(self.iou_dict_list), np.max(self.accuracy_list)
+            np.max(self.f1_avg_list), np.max(self.iou_avg_list), np.max(self.oa_avg_list)
         ))
         self.logger.info('Results saved to {}'.format(self.cfg.output_dir))
 
@@ -366,6 +334,7 @@ class Trainer:
 
         # 训练循环
         for epoch in range(self.start_epoch, self.cfg.training.epochs):
+            self.criterion.set_current_epoch(epoch)  # 更新当前训练轮次
             # 训练一个epoch
             train_stat = self._train_one_epoch(epoch)
 
@@ -456,15 +425,17 @@ class Trainer:
                 if isinstance(outputs, dict):
                     predictions = outputs['prediction']  # shape: [B, N, H, W]
                 else:
-                    predictions = outputs  # 如果没有 MOE，则直接是张量
+                    predictions = outputs
 
                 for idx, cls in enumerate(self.classes):
-                    pred_channel = predictions[:, idx, :, :]  # 提取当前类别的预测通道
-                    pred = (torch.sigmoid(pred_channel) > self.cfg.training.threshold).float().cpu().numpy().flatten()
-                    label = labels[:, idx, :, :].cpu().numpy().flatten()  # 提取当前类别的标签
+                    pred_channel = predictions[:, idx, :, :].squeeze(1)  # 正确提取第idx个类别的预测
+                    label_channel = labels[:, idx, :, :].squeeze(1)  # 确保这是对应类别的真实标签
 
-                    class_preds[cls].extend(pred)
-                    class_labels[cls].extend(label)
+                    pred = (torch.sigmoid(pred_channel) > self.cfg.training.threshold).cpu().numpy()
+                    true = label_channel.cpu().numpy()
+
+                    class_preds[cls].extend(pred.flatten())
+                    class_labels[cls].extend(true.flatten())
 
                 pbar.set_postfix({'loss': total_loss / total_samples})
 
@@ -485,7 +456,7 @@ class Trainer:
             recall = recall_score(y_true, y_pred, zero_division=0)
             f1 = f1_score(y_true, y_pred, zero_division=0)
             iou = jaccard_score(y_true, y_pred, zero_division=0)
-            accuracy = np.mean(y_true == y_pred)
+            accuracy = accuracy_score(y_true, y_pred)
 
             metrics['precision'][cls] = precision
             metrics['recall'][cls] = recall
@@ -494,3 +465,17 @@ class Trainer:
             metrics['oa'][cls] = accuracy
 
         return metrics
+
+
+def get_avg_metrics(metrics: dict):
+    """对输入metric的每一个指标单独计算所有类别的平均值"""
+    metric = {
+        'loss': metrics['loss'],
+        'precision': np.mean(list(metrics['precision'].values())),
+        'recall': np.mean(list(metrics['recall'].values())),
+        'f1': np.mean(list(metrics['f1'].values())),
+        'iou': np.mean(list(metrics['iou'].values())),
+        'oa': np.mean(list(metrics['oa'].values()))
+    }
+
+    return metric

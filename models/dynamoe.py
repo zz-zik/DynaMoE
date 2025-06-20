@@ -45,7 +45,7 @@ class DynaMoE(nn.Module):
         x = self.backbone(image1, image2)
         out = self.decode_head.forward(x)
         # out可能是字典格式或者张量格式
-        if self.use_moe and isinstance(out, dict):
+        if isinstance(out, dict):
             for key in out:
                 out[key] = F.interpolate(out[key], size=orisize[2:], mode='bilinear', align_corners=False)
         else:

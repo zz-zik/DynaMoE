@@ -142,7 +142,6 @@ class ChangeDetectionExpert(nn.Module):
             nn.ReLU(inplace=True),
             nn.Dropout2d(0.1),
             nn.Conv2d(hidden_channels // 2, output_channels, kernel_size=1),
-            nn.Sigmoid()  # 输出变化概率
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -16,7 +16,9 @@ def build_model(cfg, training=False):
         weight_load=cfg.loss.weight_load,
         weight_div=cfg.loss.weight_div,
         weight_spa=cfg.loss.weight_spa,
-        weight_gate=cfg.loss.weight_spa
+        weight_gate_base=cfg.loss.weight_gate_base,
+        weight_gate_max=cfg.loss.weight_gate_max,
+        warmup_epochs=cfg.loss.warmup_epochs,
     )
 
     return model, losses

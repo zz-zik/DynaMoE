@@ -1,5 +1,5 @@
 name: 'train'
-device: 'cuda:1'
+device: 'cuda:0'
 seed: 42
 output_dir: ./work_dirs
 num_workers: 12
@@ -25,7 +25,7 @@ data:
 model:
   backbone: 'sigma_small'                         # ['sigma_small', 'sigma_large', 'sigma_base']
   use_moe: True                                   # 是否使用 MoE
-  new_classes: null                               # 新类别列表
+  new_classes: null                               # 新类别列表，启动增量式训练
   expert_hidden_dim: 128                          # MoE 专家隐藏层维度
   gate_hidden_dim: 256                            # 门控隐藏层维度
 
@@ -34,7 +34,9 @@ loss:
   weight_load: 0.01                               # 负载均衡损失权重
   weight_div: 0.001                               # 专家多样性损失权重
   weight_spa: 0.001                               # 稀疏性损失权重
-  weight_gate: 0.05                               # 门控熵损失权重
+  weight_gate_base: 0.0                           # 门控基础损失权重
+  weight_gate_max: 0.05                           # 门控熵损失权重
+  warmup_epochs: 10                               # 预热轮数
 
 logger:
   log_name: 'Seg_log'
@@ -48,10 +50,10 @@ training:
   lr_backbone: 0.00001
   lr_drop: 20
   weight_decay: 0.0001
-  batch_size: 2
+  batch_size: 4
   eval_freq: 1
   start_eval: 1
-  threshold: 0.
+  threshold: 0.5
 
 test:
   img_dirs: './data/change'

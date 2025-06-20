@@ -137,6 +137,7 @@ if __name__ == '__main__':
 
     cfg = load_config("../configs/config.yaml")
     cfg.data.data_root = '../dataset/change_'
+    cfg.data.data_format = 'default'
 
     transforms_train = Transforms(train=True, **cfg.data.transforms.to_dict())
     transforms_val = Transforms(train=False, **cfg.data.transforms.to_dict())

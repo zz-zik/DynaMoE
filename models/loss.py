@@ -21,40 +21,56 @@ import torch.nn.functional as F
 
 
 class MoELoss(nn.Module):
-    """
-    专家混合模型的综合损失函数
-    包含主任务损失、负载均衡损失和专家多样性损失
-    """
-    def __init__(self,
-                 use_moe: bool = True,
-                 weight_ce: float = 1.0,  # 分类损失权重
-                 weight_load: float = 0.01,  # 负载均衡损失权重
-                 weight_div: float = 0.001,  # 专家多样性损失权重
-                 weight_spa: float = 0.001,  # 稀疏性损失权重
-                 weight_gate: float = 0.05  # 门控熵损失权重
-                 ):
+    def __init__(
+        self,
+        use_moe: bool = True,
+        weight_ce: float = 1.0,  # 分类损失权重
+        weight_load: float = 0.01,  # 负载均衡损失权重
+        weight_div: float = 0.001,  # 专家多样性损失权重
+        weight_spa: float = 0.001,  # 稀疏性损失权重
+        weight_gate_base: float = 0.0,  # 初始门控熵损失权重
+        weight_gate_max: float = 0.05,  # 最大门控熵损失权重
+        warmup_epochs: int = 10,  # 前多少个epoch逐渐增加权重
+    ):
         super().__init__()
         self.use_moe = use_moe
         self.main_loss_weight = weight_ce
         self.load_balance_weight = weight_load
         self.diversity_weight = weight_div
         self.sparsity_weight = weight_spa
-        self.gate_entropy_weight = weight_gate
+        self.gate_entropy_weight_base = weight_gate_base
+        self.gate_entropy_weight_max = weight_gate_max
+        self.warmup_epochs = warmup_epochs
+
+        # 当前训练轮次，初始化为0
+        self.current_epoch = 0
 
         # 主任务损失 - 变化检测的二分类损失
         self.cls = nn.BCEWithLogitsLoss()
 
-    def forward(self, pred: dict, targets: torch.Tensor) -> dict:
+    def set_current_epoch(self, epoch: int):
         """
-        Args:
-            pred: 模型输出Dict多类别 [B, num_experts, H, W] — 每个专家输出一个二分类logit
-            targets: 真实标签 [B, num_experts, H, W] - 每个专家对应的标签
-            gates: 门控权重 [B, num_experts, H, W]（可选，当 use_moe=False 时可以为 None）
+        设置当前训练轮次，用于动态调整 gate_entropy_weight
+        """
+        self.current_epoch = epoch
 
-        Returns:
-            损失字典
+    def get_gate_entropy_weight(self) -> float:
         """
+        根据当前训练轮次计算 gate_entropy_weight
+        使用线性增长策略
+        """
+        if self.current_epoch < self.warmup_epochs:
+            # 线性增长
+            ratio = self.current_epoch / max(1, self.warmup_epochs)
+            return self.gate_entropy_weight_base + ratio * (
+                self.gate_entropy_weight_max - self.gate_entropy_weight_base
+            )
+        else:
+            return self.gate_entropy_weight_max
+
+    def forward(self, pred: dict, targets: torch.Tensor) -> dict:
         device = targets.device
+
         # 提取主任务预测结果
         if 'prediction' not in pred:
             raise KeyError("缺少关键字段 'prediction' 在 `pred` 字典中")
@@ -90,13 +106,16 @@ class MoELoss(nn.Module):
             sparsity_loss = self.compute_sparsity_loss(gates)
             gate_entropy_loss = self.compute_gate_entropy_loss(gates)
 
+        # 获取当前 gate_entropy_weight
+        current_gate_weight = self.get_gate_entropy_weight()
+
         # 总损失
         total_loss = (
-                self.main_loss_weight * main_loss +
-                self.load_balance_weight * load_balance_loss +
-                self.diversity_weight * diversity_loss +
-                self.sparsity_weight * sparsity_loss +
-                self.gate_entropy_weight * gate_entropy_loss
+            self.main_loss_weight * main_loss +
+            self.load_balance_weight * load_balance_loss +
+            self.diversity_weight * diversity_loss +
+            self.sparsity_weight * sparsity_loss +
+            current_gate_weight * gate_entropy_loss
         )
 
         return {
@@ -107,6 +126,7 @@ class MoELoss(nn.Module):
             'sparsity_loss': sparsity_loss if self.use_moe else torch.tensor(0.0),
             'gate_entropy_loss': gate_entropy_loss if self.use_moe else torch.tensor(0.0),
         }
+
 
     def compute_load_balance_loss(self, gates: torch.Tensor) -> torch.Tensor:
         """

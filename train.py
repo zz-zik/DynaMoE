@@ -14,8 +14,9 @@ from utils import get_args_config
 
 # TODO: DeepSpeed分布式训练
 # TODO: 增量式训练
-# TODO: 门控熵损失动态调整
+# 门控熵损失动态调整
 def main():
+
     cfg = get_args_config()
     # 创建训练引擎并运行
     trainer = Trainer(cfg)

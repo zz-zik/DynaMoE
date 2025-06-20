@@ -16,9 +16,9 @@ def build_dataset(cfg):
         sampler_train, cfg.training.batch_size, drop_last=True)
     # DataLoader for training
     data_loader_train = DataLoader(train_set, batch_sampler=batch_sampler_train,
-                                   collate_fn=collate_fn, num_workers=cfg.num_workers)
+                                   collate_fn=collate_fn, num_workers=cfg.num_workers, pin_memory=True)
     data_loader_val = DataLoader(val_set, 1, sampler=sampler_val,
-                                 collate_fn=collate_fn, num_workers=cfg.num_workers)
+                                 collate_fn=collate_fn, num_workers=cfg.num_workers, pin_memory=True)
     # Log dataset scanning results
     logging.info("------------------------ preprocess dataset ------------------------")
     logging.info("Data_path: %s", cfg.data.data_root)
