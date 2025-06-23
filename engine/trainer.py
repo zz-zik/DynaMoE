@@ -28,18 +28,12 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class Trainer:
     """建筑物变化检测训练引擎"""
-
     def __init__(self, cfg):
-        """
-        初始化训练引擎
-
-        Args:
-            cfg: 配置对象
-        """
         self.cfg = cfg
         self.device = cfg.device
 
         self.classes = cfg.data.classes
+        self.new_classes = getattr(cfg.model, 'new_classes', None) or []
         self.threshold = cfg.test.threshold
 
         # 初始化输出目录和日志
@@ -377,7 +371,16 @@ class Trainer:
 
                 self.optimizer.zero_grad()
                 outputs = self.model(images_a, images_b)
+
+                # 根据 classes 和 new_classes 的关系调整输出维度
+                if self.new_classes and len(self.new_classes) == len(self.classes):
+                    indices = [i for i, cls in enumerate(self.classes) if cls in self.new_classes]
+                    outputs['prediction'] = outputs['prediction'][:, indices]  # [B, N_new, H, W]
+                    if 'gates' in outputs:
+                        outputs['gates'] = outputs['gates'][:, indices]  # [B, N_new, H, W]
+
                 losses = self.criterion(outputs, labels)
+
                 loss = losses['total_loss']
                 loss.backward()
                 self.optimizer.step()
@@ -415,6 +418,14 @@ class Trainer:
                 labels = labels.to(self.device)
 
                 outputs = self.model(images_a, images_b)
+
+                # 根据 classes 和 new_classes 的关系调整输出维度
+                if self.new_classes and len(self.new_classes) == len(self.classes):
+                    indices = [i for i, cls in enumerate(self.classes) if cls in self.new_classes]
+                    outputs['prediction'] = outputs['prediction'][:, indices]  # [B, N_new, H, W]
+                    if 'gates' in outputs:
+                        outputs['gates'] = outputs['gates'][:, indices]  # [B, N_new, H, W]
+
                 losses = self.criterion(outputs, labels)
                 loss = losses['total_loss']
 

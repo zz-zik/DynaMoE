@@ -12,8 +12,6 @@ from engine import Trainer
 from utils import *
 
 
-# 分布式训练
-# 门控熵损失动态调整
 # TODO: 增量式训练
 def main():
     cfg = get_args_config()

@@ -190,14 +190,14 @@ class DynamicMoE(nn.Module):
         self.expert_types = initial_expert_types.copy()
         self.num_experts = len(initial_expert_types)
 
-        # 初始化门控网络
+        # 门控网络
         self.gating_network = SpatialAwareGating(
             input_channels=input_channels,
             num_experts=self.num_experts,
             hidden_dim=gate_hidden_dim
         )
 
-        # 初始化专家网络
+        # 专家网络
         self.experts = nn.ModuleDict()
         for expert_type in initial_expert_types:
             self.experts[expert_type] = ChangeDetectionExpert(
@@ -205,7 +205,7 @@ class DynamicMoE(nn.Module):
                 hidden_channels=expert_hidden_dim
             )
 
-        # 专家激活统计 - 用于负载均衡和专家利用率分析
+        # 专家激活统计, 用于负载均衡和专家利用率分析
         self.register_buffer('expert_usage', torch.zeros(self.num_experts))
 
     def forward(self, x: torch.Tensor, return_gates: bool = False) -> Dict:
