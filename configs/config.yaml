@@ -1,8 +1,8 @@
 name: 'train'
-device: 'cuda:0'
+device: 'cuda:1,2'
 seed: 42
 output_dir: ./work_dirs
-num_workers: 12
+num_workers: 6
 resume: null # './work_dirs/train_0/checkpoints/best_f1.pth'  # null如果存在，则恢复训练
 prompt: 'Buildings with changes, Mound changes.'
 onnx_weights: './examples/ONNXRuntime/weights'
@@ -31,12 +31,12 @@ model:
 
 loss:
   weight_ce: 1.0                                  # 分类任务基础损失
-  weight_load: 0.01                               # 负载均衡损失权重
-  weight_div: 0.001                               # 专家多样性损失权重
-  weight_spa: 0.001                               # 稀疏性损失权重
+  weight_load: 0.05                               # 负载均衡损失权重
+  weight_div: 0.02                                # 专家多样性损失权重
+  weight_spa: 0.02                                # 稀疏性损失权重
   weight_gate_base: 0.0                           # 门控基础损失权重
-  weight_gate_max: 0.05                           # 门控熵损失权重
-  warmup_epochs: 10                               # 预热轮数
+  weight_gate_max: 0.1                            # 门控熵损失权重
+  warmup_epochs: 20                               # 预热轮数
 
 logger:
   log_name: 'Seg_log'

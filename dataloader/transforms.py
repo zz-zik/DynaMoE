@@ -283,27 +283,23 @@ class GaussianBlur(nn.Module):
         return a_img, b_img, target
 
 
-
 class CLAHE(nn.Module):
     """直方图均衡化变换"""
 
     def __init__(self, prob: float = 0.5):
         super().__init__()
         self.prob = prob
-        self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
     def apply_clahe_to_image(self, img: np.ndarray) -> np.ndarray:
-        """对单张图像应用 CLAHE，保留通道信息"""
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))  # ✅ 每次都新建
         if len(img.shape) == 3 and img.shape[2] == 3:
-            # RGB 图像：转换到 LAB 空间，对 L 通道进行 CLAHE
             lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
             l, a, b = cv2.split(lab)
-            l_eq = self.clahe.apply(l)
+            l_eq = clahe.apply(l)
             lab_eq = cv2.merge((l_eq, a, b))
             img_eq = cv2.cvtColor(lab_eq, cv2.COLOR_LAB2RGB)
         else:
-            # 灰度图或单通道图像
-            img_eq = self.clahe.apply(img)
+            img_eq = clahe.apply(img)
         return img_eq
 
     def forward(self, a_img: np.ndarray, b_img: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -312,3 +308,4 @@ class CLAHE(nn.Module):
             b_img = self.apply_clahe_to_image(b_img)
 
         return a_img, b_img, target
+

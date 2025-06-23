@@ -87,6 +87,11 @@ data/
 python train.py -c ./configs/config.yaml
 ```
 
+分布式训练
+```bash
+CUDA_VISIBLE_DEVICES=1,2 python train.py -c configs/config.yaml
+```
+
 ## 测试
 ```bash
 python test.py -c ./configs/config.yaml

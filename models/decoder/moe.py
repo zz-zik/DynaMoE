@@ -390,6 +390,7 @@ if __name__ == "__main__":
 
     # 测试动态添加专家
     print(f"\n=== 动态添加新专家 ===")
+    model.freeze_existing_experts()
     model.add_expert('building')
     model.add_expert('forest')
 
@@ -397,7 +398,6 @@ if __name__ == "__main__":
     print(f"更新后专家类型: {model.expert_types}")
 
     # 测试扩展后的前向传播
-
     results_expanded = model(input_features, return_gates=True)
     print(f"扩展后预测结果尺寸: {results_expanded['prediction'].shape}")
     print(f"扩展后门控权重尺寸: {results_expanded['gates'].shape}")

@@ -8,6 +8,7 @@
 @Desc    : 配置文件
 @Usage   : 
 """
+import os
 import pprint
 from typing import List
 import torch.distributed as dist
@@ -116,3 +117,119 @@ def collate_fn(batch):
     labels_batched = torch.stack(labels, dim=0)  # [B, C, H, W]
 
     return images_a, images_b, labels_batched
+
+
+def parse_device(device_str):
+    """解析设备配置字符串
+    Args:
+        device_str: 设备字符串，支持以下格式：
+                   - 'cpu': 仅使用CPU
+                   - 'cuda:0,1': 使用CUDA设备0和1
+                   - '0,1,2': 使用CUDA设备0,1,2
+    Returns:
+        dict: 包含设备信息的字典
+            - device_type: 'cpu' 或 'cuda'
+            - device_ids: GPU设备ID列表（如果使用CUDA）
+            - main_device: 主设备
+            - distributed: 是否启用分布式训练
+    """
+    device_info = {
+        'device_type': 'cpu',
+        'device_ids': [],
+        'main_device': 'cpu',
+        'distributed': False
+    }
+
+    if device_str.lower() == 'cpu':
+        return device_info
+
+    if device_str.startswith('cuda:'):
+        # 格式: 'cuda:0,1,2'
+        device_ids_str = device_str[5:]
+    else:
+        # 格式: '0,1,2'
+        device_ids_str = device_str
+
+    try:
+        device_ids = [int(x.strip()) for x in device_ids_str.split(',')]
+        device_info.update({
+            'device_type': 'cuda',
+            'device_ids': device_ids,
+            'main_device': f'cuda:{device_ids[0]}',
+            'distributed': len(device_ids) > 1
+        })
+    except ValueError:
+        print(f"Warning: Invalid device string '{device_str}', falling back to CPU")
+
+    return device_info
+
+
+def setup_distributed(device_info):
+    """
+    设置分布式训练环境
+
+    Args:
+        device_info: 设备信息字典
+
+    Returns:
+        bool: 是否成功初始化分布式训练
+    """
+    if not device_info['distributed']:
+        return False
+
+    if not torch.cuda.is_available():
+        print("CUDA is not available, cannot use distributed training")
+        return False
+
+    # 检查环境变量
+    if 'RANK' not in os.environ:
+        os.environ['MASTER_ADDR'] = 'localhost'
+        os.environ['MASTER_PORT'] = '12355'
+        os.environ['WORLD_SIZE'] = str(len(device_info['device_ids']))
+
+        import torch.multiprocessing as mp
+        mp.spawn(
+            distributed_main,
+            args=(device_info,),
+            nprocs=len(device_info['device_ids']),
+            join=True
+        )
+        return True
+
+    local_rank = int(os.environ.get('LOCAL_RANK', 0))
+    actual_device_id = device_info['device_ids'][local_rank]
+    torch.cuda.set_device(actual_device_id)
+
+    dist.init_process_group(backend='nccl')
+    return True
+
+
+def distributed_main(rank, device_info):
+    """
+    分布式训练主函数
+
+    Args:
+        rank: 进程排名
+        device_info: 设备信息字典
+    """
+    os.environ['RANK'] = str(rank)
+    os.environ['LOCAL_RANK'] = str(rank)
+
+    actual_device_id = device_info['device_ids'][rank]
+    torch.cuda.set_device(actual_device_id)
+
+    dist.init_process_group(
+        backend='nccl',
+        init_method='env://',
+        world_size=len(device_info['device_ids']),
+        rank=rank
+    )
+
+    from engine.trainer_dp import Trainer
+    from train import get_args_config
+
+    cfg = get_args_config()
+    cfg.device = f"cuda:{actual_device_id}"
+
+    trainer = Trainer(cfg)
+    trainer.run()

@@ -42,10 +42,10 @@ class MoELoss(nn.Module):
         self.gate_entropy_weight_max = weight_gate_max
         self.warmup_epochs = warmup_epochs
 
-        # 当前训练轮次，初始化为0
         self.current_epoch = 0
 
-        # 主任务损失 - 变化检测的二分类损失
+        # 主损失
+        # self.cls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.5, 0.8], device=device))  # 加入类别权重
         self.cls = nn.BCEWithLogitsLoss()
 
     def set_current_epoch(self, epoch: int):
