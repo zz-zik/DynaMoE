@@ -21,7 +21,7 @@ def ensure_dir(path):
 
 def generate_black_mask(size, save_path):
     """生成全黑二值图像（0 值）"""
-    mask = np.zeros(size[::-1], dtype=np.uint8)  # (width, height) -> (height, width)
+    mask = np.zeros(size[::-1], dtype=np.uint8)  # 反转尺寸 (width, height) -> (height, width)
     img = Image.fromarray(mask)
     img.save(save_path)
 
@@ -62,7 +62,7 @@ def add_missing_masks(image_root, mask_root, file_types=None):
                     print(f"无法打开原图以获取尺寸: {e}")
                     continue
 
-                # 二值图
+                # 生成全黑二值图
                 generate_black_mask(size, expected_file)
                 print(f"已补充缺失的掩码文件: {expected_file}")
 
