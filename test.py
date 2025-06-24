@@ -8,3 +8,15 @@
 @Desc    : 
 @Usage   : 
 """
+from engine import Tester
+from utils import get_args_config
+
+
+def main():
+    cfg = get_args_config()
+    tester = Tester(cfg)
+    tester.run()
+
+
+if __name__ == '__main__':
+    main()

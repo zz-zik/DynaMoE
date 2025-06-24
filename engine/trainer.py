@@ -373,11 +373,15 @@ class Trainer:
                 outputs = self.model(images_a, images_b)
 
                 # 根据 classes 和 new_classes 的关系调整输出维度
-                if self.new_classes and len(self.new_classes) == len(self.classes):
+                if self.new_classes and len(self.new_classes) < len(self.classes):
                     indices = [i for i, cls in enumerate(self.classes) if cls in self.new_classes]
                     outputs['prediction'] = outputs['prediction'][:, indices]  # [B, N_new, H, W]
                     if 'gates' in outputs:
                         outputs['gates'] = outputs['gates'][:, indices]  # [B, N_new, H, W]
+
+                    # 同步裁剪 labels
+                    if len(self.new_classes) == len(self.classes):
+                        labels = labels[:, indices]  # [B, N_new, H, W]
 
                 losses = self.criterion(outputs, labels)
 
@@ -420,11 +424,15 @@ class Trainer:
                 outputs = self.model(images_a, images_b)
 
                 # 根据 classes 和 new_classes 的关系调整输出维度
-                if self.new_classes and len(self.new_classes) == len(self.classes):
+                if self.new_classes and len(self.new_classes) < len(self.classes):
                     indices = [i for i, cls in enumerate(self.classes) if cls in self.new_classes]
                     outputs['prediction'] = outputs['prediction'][:, indices]  # [B, N_new, H, W]
                     if 'gates' in outputs:
                         outputs['gates'] = outputs['gates'][:, indices]  # [B, N_new, H, W]
+
+                    # 同步裁剪 labels
+                    if len(self.new_classes) == len(self.classes):
+                        labels = labels[:, indices]  # [B, N_new, H, W]
 
                 losses = self.criterion(outputs, labels)
                 loss = losses['total_loss']
