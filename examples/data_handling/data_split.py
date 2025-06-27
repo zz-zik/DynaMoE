@@ -69,6 +69,6 @@ def split_data(data_base, ratios):
 
 
 if __name__ == "__main__":
-    data_base = '../../dataset/change'  # 根目录路径
+    data_base = '../../dataset/change2'  # 根目录路径
     ratios = [0.8, 0.1, 0.1]  # 拆分比例
     split_data(data_base, ratios)

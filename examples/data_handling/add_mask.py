@@ -34,7 +34,7 @@ def add_missing_masks(image_root, mask_root, file_types=None):
     :param file_types: 要处理的掩码类型列表，如 ['building', 'vegetation']
     """
     if file_types is None:
-        file_types = ['building', 'vegetation']
+        file_types = ['building', 'vegetation', 'additions', 'landscapes', 'woodlands']
 
     # 获取主图像文件名（假设为主文件夹 A 中的文件）
     a_dir = os.path.join(image_root, 'A')
@@ -68,8 +68,8 @@ def add_missing_masks(image_root, mask_root, file_types=None):
 
 
 def main():
-    image_root = '/sxs/zhoufei/DynaMoE/dataset/Change'
-    mask_root = '/sxs/zhoufei/DynaMoE/dataset/Change/masks'
+    image_root = '/sxs/zhoufei/DynaMoE/dataset/change2'
+    mask_root = '/sxs/zhoufei/DynaMoE/dataset/change2/masks'
 
     add_missing_masks(image_root, mask_root)
 

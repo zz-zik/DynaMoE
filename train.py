@@ -5,14 +5,13 @@
 @Time    : 2025/6/13 下午5:45
 @Author  : ZhouFei
 @Email   : zhoufei.net@gmail.com
-@Desc    : 
+@Desc    : 支持增量式训练
 @Usage   : 
 """
 from engine import Trainer
 from utils import *
 
 
-# TODO: 增量式训练
 def main():
     cfg = get_args_config()
     device_info = parse_device(cfg.device)

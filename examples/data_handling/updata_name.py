@@ -13,8 +13,9 @@ from tkinter import Tk, filedialog
 from PIL import Image, UnidentifiedImageError
 import numpy as np
 
+
 def rename_files(root_dir, start_number, new_root_dir):
-    subsets = ['building', 'vegetation']
+    subsets = ['additions', 'landscapes', 'woodlands']
     file_types = ['A', 'B', 'labels']
 
     for subset in subsets:
@@ -82,10 +83,10 @@ def rename_files(root_dir, start_number, new_root_dir):
 
 def main():
     # 选择根目录
-    root_dir = '/sxs/zhoufei/DynaMoE/dataset/Change'
+    root_dir = '/sxs/zhoufei/DynaMoE/dataset/add'
     new_root_dir = '/sxs/zhoufei/DynaMoE/dataset/Change_new/'  # 新的保存路径
 
-    start_number = 1
+    start_number = 795
     # 执行重命名和保存
     rename_files(root_dir, start_number, new_root_dir)
     print("重命名和保存完成！")
