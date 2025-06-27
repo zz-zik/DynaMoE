@@ -253,7 +253,7 @@ class DynamicMoE(nn.Module):
             print(f"Expert '{expert_type}' already exists!")
             return
 
-        print(f"Adding new expert: {expert_type}")
+        # print(f"Adding new expert: {expert_type}")
 
         # 添加新专家网络
         self.experts[expert_type] = ChangeDetectionExpert(
@@ -280,7 +280,7 @@ class DynamicMoE(nn.Module):
             print(f"Expert '{expert_type}' does not exist!")
             return
 
-        print(f"Removing expert: {expert_type}")
+        # print(f"Removing expert: {expert_type}")
 
         # 移除专家
         del self.experts[expert_type]

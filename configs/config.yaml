@@ -1,5 +1,5 @@
 name: 'train'
-device: 'cuda:1,2'
+device: 'cuda:0,2'
 seed: 42
 output_dir: ./work_dirs
 num_workers: 6
@@ -8,9 +8,9 @@ prompt: 'Buildings with changes, Mound changes.'
 onnx_weights: './examples/ONNXRuntime/weights'
 
 data:
-  data_root: './dataset/change'
+  data_root: './dataset/change2'
   img_size: [512, 512]                            # 输入图片大小
-  classes: ['building', 'vegetation']             # 多掩码二值类别
+  classes: ['building', 'vegetation', 'additions', 'landscapes']             # 多掩码二值类别
   data_format: 'custom'                           # ['default', 'custom']
   transforms:
     prob: 1.0                                     # 应用概率
@@ -25,7 +25,8 @@ data:
 model:
   backbone: 'sigma_small'                         # ['sigma_small', 'sigma_large', 'sigma_base']
   use_moe: True                                   # 是否使用 MoE
-  new_classes: null                               # 新类别列表，启动增量式训练
+  new_classes: ['additions', 'landscapes']                               # 新类别列表，启动增量式训练
+  weights: './work_dirs/train/checkpoints/best_f1.pth'            # 模型权重
   expert_hidden_dim: 128                          # MoE 专家隐藏层维度
   gate_hidden_dim: 256                            # 门控隐藏层维度
 
@@ -50,7 +51,7 @@ training:
   lr_backbone: 0.00001
   lr_drop: 20
   weight_decay: 0.0001
-  batch_size: 4
+  batch_size: 2
   eval_freq: 1
   start_eval: 1
   threshold: 0.5

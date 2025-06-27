@@ -55,6 +55,8 @@ class Trainer:
         self.distributed = self.device_info['distributed']
 
         self.classes = cfg.data.classes
+        self.new_classes = getattr(cfg.model, 'new_classes', None) or []
+        self.weights = cfg.model.weights
         self.threshold = cfg.test.threshold
 
         # 初始化输出目录和日志（仅主进程）
@@ -108,6 +110,63 @@ class Trainer:
         else:
             self.criterion.to(self.device)
 
+        # 增量式训练：如果new_classes不为空，加载预训练权重
+        if self.new_classes:
+            if self.is_main_process:
+                self._log_info('------------------------ Incremental Learning Mode ------------------------')
+                self._log_info(f'New classes: {self.new_classes}')
+                self._log_info(f'Loading pretrained weights from: {self.weights}')
+
+            if self.weights and os.path.exists(self.weights):
+                # 加载预训练权重
+                if self.is_main_process:
+                    self._log_info(f'Loading model weights from {self.weights}')
+
+                # 根据是否分布式确定map_location
+                if self.distributed:
+                    map_location = {'cuda:%d' % 0: 'cuda:%d' % self.local_rank}
+                else:
+                    map_location = self.device
+
+                try:
+                    checkpoint = torch.load(self.weights, map_location=map_location)
+
+                    # 提取模型权重
+                    if 'model' in checkpoint:
+                        pretrained_dict = checkpoint['model']
+                    elif 'state_dict' in checkpoint:
+                        pretrained_dict = checkpoint['state_dict']
+                    else:
+                        pretrained_dict = checkpoint
+
+                    # 加载权重（允许部分匹配）
+                    model_dict = self.model.state_dict()
+
+                    # 过滤掉不匹配的权重
+                    pretrained_dict = {k: v for k, v in pretrained_dict.items()
+                                       if k in model_dict and v.shape == model_dict[k].shape}
+
+                    # 更新模型权重
+                    model_dict.update(pretrained_dict)
+                    self.model.load_state_dict(model_dict, strict=False)
+
+                    if self.is_main_process:
+                        self._log_info(f'Successfully loaded {len(pretrained_dict)} pretrained parameters')
+                        self._log_info('Model is ready for incremental training with frozen MoE gates')
+
+                except Exception as e:
+                    if self.is_main_process:
+                        self._log_info(f'Warning: Failed to load pretrained weights: {str(e)}')
+                        self._log_info('Continuing with random initialization')
+            else:
+                if self.is_main_process:
+                    if not self.weights:
+                        self._log_info('Warning: No pretrained weights path provided for incremental learning')
+                    else:
+                        self._log_info(f'Warning: Pretrained weights file not found: {self.weights}')
+                    self._log_info('Continuing with random initialization')
+
+        # 设置分布式训练
         if self.distributed:
             actual_device_id = self.device_info['device_ids'][self.local_rank]
             self.model = DDP(
@@ -123,6 +182,14 @@ class Trainer:
         if self.is_main_process:
             n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
             self._log_info('number of params: %d', n_parameters)
+
+            # 如果是增量式训练，打印冻结参数信息
+            if self.new_classes:
+                frozen_params = sum(p.numel() for p in self.model.parameters() if not p.requires_grad)
+                trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+                self._log_info(f'Frozen parameters: {frozen_params}')
+                self._log_info(f'Trainable parameters: {trainable_params}')
+                self._log_info(f'Total parameters: {frozen_params + trainable_params}')
 
     def _setup_optimizer(self):
         """设置优化器和学习率调度器"""
@@ -511,10 +578,23 @@ class Trainer:
 
             self.optimizer.zero_grad()
             outputs = self.model(images_a, images_b)
+
+            # 根据 classes 和 new_classes 的关系调整输出维度
+            if self.new_classes and len(self.new_classes) < len(self.classes):
+                indices = [i for i, cls in enumerate(self.classes) if cls in self.new_classes]
+                outputs['prediction'] = outputs['prediction'][:, indices]  # [B, N_new, H, W]
+                if 'gates' in outputs:
+                    outputs['gates'] = outputs['gates'][:, indices]  # [B, N_new, H, W]
+
+                # 同步裁剪 labels
+                if len(self.new_classes) < len(self.classes):
+                    labels = labels[:, indices]  # [B, N_new, H, W]
+
             losses = self.criterion(outputs, labels)
             loss = losses['total_loss']
             loss.backward()
             self.optimizer.step()
+
 
             total_loss += loss.item() * images_a.size(0)
             total_samples += images_a.size(0)
@@ -556,6 +636,18 @@ class Trainer:
                 labels = labels.to(self.device)
 
                 outputs = self.model(images_a, images_b)
+
+                # 根据 classes 和 new_classes 的关系调整输出维度
+                if self.new_classes and len(self.new_classes) < len(self.classes):
+                    indices = [i for i, cls in enumerate(self.classes) if cls in self.new_classes]
+                    outputs['prediction'] = outputs['prediction'][:, indices]  # [B, N_new, H, W]
+                    if 'gates' in outputs:
+                        outputs['gates'] = outputs['gates'][:, indices]  # [B, N_new, H, W]
+
+                    # 同步裁剪 labels
+                    if len(self.new_classes) == len(self.classes):
+                        labels = labels[:, indices]  # [B, N_new, H, W]
+
                 losses = self.criterion(outputs, labels)
                 loss = losses['total_loss']
 
